@@ -2,6 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 import Redis from "ioredis";
 import { BANNER_KEY } from "./util/keys.js";
+import { generateOtpKey } from "./util/generateOptKey.js";
 
 
 
@@ -24,6 +25,8 @@ app.get("/mongo", async (req, res) => {
     }
     res.json({message:`MongoDB connected successfully`})
 })
+
+// Banner API's
 
 app.post("/banner", async (req, res) => {
     await redis.set(BANNER_KEY, req.body.message || "Welcome")
@@ -55,6 +58,41 @@ app.get("/banner/exists", async (req, res) => {
     })
 })
 
+
+// OTP API's
+
+app.post("/otp", async (req, res) => {
+    const {phone} = req.body
+    await redis.del(generateOtpKey(Number(phone)))
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    await redis.set(generateOtpKey(Number(phone)), otp, "EX", 30)
+    res.json({ success: true, otp })
+})
+
+app.post("/otp/verify", async (req, res) => {
+    const { phone, otp } = req.body
+    const exists = await redis.exists(generateOtpKey(Number(phone)))
+    if (!exists) {
+        res.status(400).json({ message: "Key doesn't exists" })
+        return
+    }
+    const otpValue = await redis.get(generateOtpKey(Number(phone)))
+
+    if (otpValue != otp) {
+        res.status(400).json({ message: "OTP is incorrect" })
+        return
+    }
+
+    await redis.del(generateOtpKey(Number(phone)))
+    res.json({message:"OTP verified successfully!"})
+})
+
+app.get("/otp/:phone/ttl", async (req, res) => {
+    const result = await redis.ttl(generateOtpKey(Number(req.params.phone)))
+    res.json({
+        ttl: result
+    })
+})
 
 app.listen(3000, () => {
     console.log("Server is running on port 3000")
